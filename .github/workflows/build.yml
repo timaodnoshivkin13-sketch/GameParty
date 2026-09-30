@@ -17,9 +17,6 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
     - name: Prepare Directory Structure
       run: |
         mkdir -p src/main/java/com/example/gameparty
@@ -32,17 +29,26 @@ jobs:
 
     - name: Compile and Package APK
       run: |
+        # Принимаем лицензии Android SDK
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        
+        # Компиляция ресурсов
         $ANDROID_HOME/build-tools/34.0.0/aapt package -f -m -J src/main/java -M src/main/AndroidManifest.xml -S src/main/res -I $ANDROID_HOME/platforms/android-34/android.jar || true
         
+        # Компиляция Java
         javac -d build/classes -classpath $ANDROID_HOME/platforms/android-34/android.jar src/main/java/com/example/gameparty/*.java || true
         
+        # Генерация DEX
         $ANDROID_HOME/build-tools/34.0.0/d8 --output build/dex build/classes/com/example/gameparty/*.class || true
         
+        # Упаковка APK
         $ANDROID_HOME/build-tools/34.0.0/aapt package -f -M src/main/AndroidManifest.xml -S src/main/res -I $ANDROID_HOME/platforms/android-34/android.jar -F build/apk/app-unsigned.apk || true
         
+        # Внедрение DEX
         cd build/dex && zip -u ../apk/app-unsigned.apk classes.dex || true
         cd ../..
 
+        # Подпись
         keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
         $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android --out build/apk/GameParty-64bit.apk build/apk/app-unsigned.apk || cp build/apk/app-unsigned.apk build/apk/GameParty-64bit.apk
 
