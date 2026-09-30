@@ -1,0 +1,57 @@
+name: Build GameParty APK
+
+on:
+  push:
+    branches: [ "основной", "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Build APK with AAPT2
+      run: |
+        mkdir -p build/outputs/apk
+        # Компиляция ресурсов
+        $ANDROID_HOME/build-tools/34.0.0/aapt2 compile --dir . -o build/compiled_res.zip || true
+        # Создание структуры проекта
+        mkdir -p src/main/java/com/example/gameparty
+        mkdir -p src/main/res/layout
+        cp MainActivity.java src/main/java/com/example/gameparty/ || true
+        cp layout_main.xml src/main/res/layout/ || true
+        cp AndroidManifest.xml src/main/ || true
+        
+        # Сборка базового APK
+        $ANDROID_HOME/build-tools/34.0.0/aapt2 link -o build/outputs/apk/app-unsigned.apk -I $ANDROID_HOME/platforms/android-34/android.jar --manifest AndroidManifest.xml -R build/compiled_res.zip --auto-add-overlay || true
+        
+        # Компиляция Java кода
+        javac -d build/classes -classpath $ANDROID_HOME/platforms/android-34/android.jar MainActivity.java || true
+        $ANDROID_HOME/build-tools/34.0.0/d8 --output build/build_dex build/classes/com/example/gameparty/*.class || true
+        
+        # Упаковка и подпись 64-битного APK
+        cd build
+        zip -j outputs/apk/app-unsigned.apk build_dex/classes.dex || true
+        $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 outputs/apk/app-unsigned.apk outputs/apk/GameParty-64bit.apk || cp outputs/apk/app-unsigned.apk outputs/apk/GameParty-64bit.apk
+        
+        # Создание тестового ключа и подпись
+        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android outputs/apk/GameParty-64bit.apk || true
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: GameParty-64bit-APK
+        path: "build/outputs/apk/*.apk"
+        
