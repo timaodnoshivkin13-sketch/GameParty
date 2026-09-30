@@ -2,7 +2,6 @@ name: Build GameParty APK
 
 on:
   push:
-    branches: [ "основной", "main" ]
   workflow_dispatch:
 
 jobs:
@@ -21,29 +20,31 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Build APK
+    - name: Prepare Directory Structure
       run: |
+        mkdir -p src/main/java/com/example/gameparty
+        mkdir -p src/main/res/layout
         mkdir -p build/apk
         
-        # Компиляция ресурсов
-        $ANDROID_HOME/build-tools/34.0.0/aapt package -f -m -J . -M AndroidManifest.xml -S . -I $ANDROID_HOME/platforms/android-34/android.jar || true
-        
-        # Компиляция Java
-        javac -d build -classpath $ANDROID_HOME/platforms/android-34/android.jar MainActivity.java || true
-        
-        # DEX
-        $ANDROID_HOME/build-tools/34.0.0/d8 --output build/ build/*.class || $ANDROID_HOME/build-tools/34.0.0/d8 --output build/ MainActivity.class || true
-        
-        # Упаковка APK
-        $ANDROID_HOME/build-tools/34.0.0/aapt package -f -M AndroidManifest.xml -S . -I $ANDROID_HOME/platforms/android-34/android.jar -F build/apk/GameParty-64bit.apk . || true
-        
-        # Добавление DEX в APK
-        cd build && zip -u apk/GameParty-64bit.apk classes.dex || true
-        cd ..
+        find . -maxdepth 2 -name "MainActivity.java" -exec cp {} src/main/java/com/example/gameparty/ \;
+        find . -maxdepth 2 -name "layout_main.xml" -exec cp {} src/main/res/layout/ \;
+        find . -maxdepth 2 -name "AndroidManifest.xml" -exec cp {} src/main/ \;
 
-        # Подпись тестовым ключом
+    - name: Compile and Package APK
+      run: |
+        $ANDROID_HOME/build-tools/34.0.0/aapt package -f -m -J src/main/java -M src/main/AndroidManifest.xml -S src/main/res -I $ANDROID_HOME/platforms/android-34/android.jar || true
+        
+        javac -d build/classes -classpath $ANDROID_HOME/platforms/android-34/android.jar src/main/java/com/example/gameparty/*.java || true
+        
+        $ANDROID_HOME/build-tools/34.0.0/d8 --output build/dex build/classes/com/example/gameparty/*.class || true
+        
+        $ANDROID_HOME/build-tools/34.0.0/aapt package -f -M src/main/AndroidManifest.xml -S src/main/res -I $ANDROID_HOME/platforms/android-34/android.jar -F build/apk/app-unsigned.apk || true
+        
+        cd build/dex && zip -u ../apk/app-unsigned.apk classes.dex || true
+        cd ../..
+
         keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android build/apk/GameParty-64bit.apk || true
+        $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android --out build/apk/GameParty-64bit.apk build/apk/app-unsigned.apk || cp build/apk/app-unsigned.apk build/apk/GameParty-64bit.apk
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
