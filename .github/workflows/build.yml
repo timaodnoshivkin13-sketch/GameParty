@@ -21,37 +21,33 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Build APK with AAPT2
+    - name: Build APK
       run: |
-        mkdir -p build/outputs/apk
+        mkdir -p build/apk
+        
         # Компиляция ресурсов
-        $ANDROID_HOME/build-tools/34.0.0/aapt2 compile --dir . -o build/compiled_res.zip || true
-        # Создание структуры проекта
-        mkdir -p src/main/java/com/example/gameparty
-        mkdir -p src/main/res/layout
-        cp MainActivity.java src/main/java/com/example/gameparty/ || true
-        cp layout_main.xml src/main/res/layout/ || true
-        cp AndroidManifest.xml src/main/ || true
+        $ANDROID_HOME/build-tools/34.0.0/aapt package -f -m -J . -M AndroidManifest.xml -S . -I $ANDROID_HOME/platforms/android-34/android.jar || true
         
-        # Сборка базового APK
-        $ANDROID_HOME/build-tools/34.0.0/aapt2 link -o build/outputs/apk/app-unsigned.apk -I $ANDROID_HOME/platforms/android-34/android.jar --manifest AndroidManifest.xml -R build/compiled_res.zip --auto-add-overlay || true
+        # Компиляция Java
+        javac -d build -classpath $ANDROID_HOME/platforms/android-34/android.jar MainActivity.java || true
         
-        # Компиляция Java кода
-        javac -d build/classes -classpath $ANDROID_HOME/platforms/android-34/android.jar MainActivity.java || true
-        $ANDROID_HOME/build-tools/34.0.0/d8 --output build/build_dex build/classes/com/example/gameparty/*.class || true
+        # DEX
+        $ANDROID_HOME/build-tools/34.0.0/d8 --output build/ build/*.class || $ANDROID_HOME/build-tools/34.0.0/d8 --output build/ MainActivity.class || true
         
-        # Упаковка и подпись 64-битного APK
-        cd build
-        zip -j outputs/apk/app-unsigned.apk build_dex/classes.dex || true
-        $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 outputs/apk/app-unsigned.apk outputs/apk/GameParty-64bit.apk || cp outputs/apk/app-unsigned.apk outputs/apk/GameParty-64bit.apk
+        # Упаковка APK
+        $ANDROID_HOME/build-tools/34.0.0/aapt package -f -M AndroidManifest.xml -S . -I $ANDROID_HOME/platforms/android-34/android.jar -F build/apk/GameParty-64bit.apk . || true
         
-        # Создание тестового ключа и подпись
+        # Добавление DEX в APK
+        cd build && zip -u apk/GameParty-64bit.apk classes.dex || true
+        cd ..
+
+        # Подпись тестовым ключом
         keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android outputs/apk/GameParty-64bit.apk || true
+        $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android build/apk/GameParty-64bit.apk || true
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: GameParty-64bit-APK
-        path: "build/outputs/apk/*.apk"
+        path: "build/apk/*.apk"
         
